@@ -1,0 +1,9 @@
+{
+  "name": "abiz-channels",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A.Biz 채널별 QR 트래킹 (Vercel + Upstash Redis)",
+  "dependencies": {
+    "@upstash/redis": "^1.34.0"
+  }
+}

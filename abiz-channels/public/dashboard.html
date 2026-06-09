@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A.Biz 채널 실적 대시보드</title>
+<style>
+  :root{--bg:#0f1110;--fg:#f4f6f3;--muted:#9aa39c;--accent:#2d7fff;--line:#262b27;--card:#16191b}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);min-height:100vh;padding:32px 20px;
+       font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+  .wrap{max-width:680px;margin:0 auto}
+  .head{display:flex;align-items:center;gap:12px}
+  .dot{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;
+       display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
+  h1{font-size:18px;font-weight:700;letter-spacing:-.4px}
+  .sub{color:var(--muted);font-size:13px;margin:6px 0 22px 50px}
+  .nav{margin:0 0 20px 50px}
+  .nav a{color:var(--accent);font-size:13px;text-decoration:none;cursor:pointer}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+  .stat{background:var(--card);border-radius:12px;padding:16px}
+  .stat .l{font-size:13px;color:var(--muted);margin-bottom:6px}
+  .stat .v{font-size:24px;font-weight:800;letter-spacing:-1px}
+  .list{display:flex;flex-direction:column;gap:10px}
+  .ch{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+      display:flex;align-items:center;gap:14px;cursor:pointer;transition:border-color .15s}
+  .ch:hover{border-color:var(--accent)}
+  .ch .info{flex:1;min-width:0}
+  .ch .name{font-size:14px;font-weight:700}
+  .ch .meta{font-size:12px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ch .col{text-align:right;min-width:50px}
+  .ch .col .cl{font-size:11px;color:var(--muted)}
+  .ch .col .cv{font-size:15px;font-weight:700}
+  .ch .col.total .cv{color:var(--accent)}
+  .chev{color:#5a615b;font-size:18px}
+  .empty{color:var(--muted);font-size:14px;text-align:center;padding:40px 0}
+  .bar{display:flex;gap:10px;margin-top:16px;align-items:center}
+  button{font:inherit;cursor:pointer;border-radius:10px;padding:10px 16px;border:1px solid var(--line);
+         background:transparent;color:var(--fg);font-size:14px;font-weight:600}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .meta-r{margin-left:auto;color:var(--muted);font-size:12px}
+
+  /* 상세 */
+  .detail{display:none}
+  .detail.show{display:block}
+  .list-view.hide{display:none}
+  .back{color:var(--accent);font-size:13px;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px}
+  .d-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px}
+  .total-box{border:1px solid #1d3a66;border-radius:12px;padding:14px 16px;margin-bottom:18px;
+             background:linear-gradient(180deg,rgba(45,127,255,.08),transparent)}
+  .total-box .l{font-size:13px;color:var(--muted)}
+  .total-box .v{font-size:30px;font-weight:800;color:var(--accent);letter-spacing:-1px}
+  .rows{display:flex;flex-direction:column;gap:2px}
+  .drow{display:grid;grid-template-columns:64px 1fr 56px;align-items:center;gap:10px;
+        padding:7px 0;border-bottom:1px solid #1c201d}
+  .drow .date{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .drow .date .dow{margin-left:5px;font-size:11px}
+  .drow.weekend .date{color:#e0a35f}
+  .barwrap{height:18px;border-radius:5px;background:#161917;overflow:hidden;display:flex}
+  .seg.a{background:var(--accent);height:100%}
+  .seg.i{background:#5fa8ff;height:100%}
+  .drow .tot{text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .drow.zero .tot{color:#4a514b;font-weight:500}
+  .legend{display:flex;gap:14px;margin:14px 0;font-size:12px;color:var(--muted)}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px}
+  .legend .a{background:var(--accent)}.legend .i{background:#5fa8ff}
+  .qrlinks{margin-top:16px;font-size:13px}
+  .qrlinks a{color:var(--accent);text-decoration:none;margin-right:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="dot">A.</div>
+    <h1>A.Biz 채널 실적 대시보드</h1>
+  </div>
+  <div class="sub">채널을 클릭하면 OS별·일자별 상세로 이동합니다.</div>
+  <div class="nav"><a href="./generate.html">→ 채널 QR 생성기</a></div>
+
+  <!-- 목록 -->
+  <div class="list-view" id="listView">
+    <div class="stats">
+      <div class="stat"><div class="l">전체 스캔</div><div class="v" id="s-total">…</div></div>
+      <div class="stat"><div class="l">활성 채널</div><div class="v" id="s-count">…</div></div>
+      <div class="stat"><div class="l">오늘 스캔</div><div class="v" id="s-today">…</div></div>
+    </div>
+    <div class="list" id="list"><div class="empty">불러오는 중…</div></div>
+    <div class="bar">
+      <button class="primary" onclick="loadList()">새로고침</button>
+      <span class="meta-r" id="updated"></span>
+    </div>
+  </div>
+
+  <!-- 상세 -->
+  <div class="detail" id="detail">
+    <a class="back" onclick="goList()">← 채널 목록</a>
+    <h1 id="d-name" style="margin-bottom:4px"></h1>
+    <div class="sub" id="d-note" style="margin:4px 0 18px 0"></div>
+    <div class="total-box">
+      <div class="l">전체 합계</div>
+      <div class="v" id="d-total">…</div>
+    </div>
+    <div class="d-stats">
+      <div class="stat"><div class="l">Android</div><div class="v" id="d-aos">…</div></div>
+      <div class="stat"><div class="l">iPhone</div><div class="v" id="d-ios">…</div></div>
+      <div class="stat"><div class="l">오늘</div><div class="v" id="d-today">…</div></div>
+    </div>
+    <div class="legend"><span><i class="a"></i>Android</span><span><i class="i"></i>iPhone</span></div>
+    <div class="rows" id="d-rows"><div class="empty">불러오는 중…</div></div>
+    <div class="qrlinks" id="d-qrlinks"></div>
+  </div>
+</div>
+
+<script>
+  var BASE = location.origin;
+  var DOW = ["일","월","화","수","목","금","토"];
+
+  function fmt(n){ return (n||0).toLocaleString(); }
+
+  async function loadList(){
+    var listEl = document.getElementById('list');
+    listEl.innerHTML = '<div class="empty">불러오는 중…</div>';
+    var data;
+    try{
+      var r = await fetch(BASE + "/api/channels", {cache:"no-store"});
+      data = await r.json();
+    }catch(e){
+      listEl.innerHTML = '<div class="empty">목록을 불러오지 못했습니다. (API 연결 확인)</div>'; return;
+    }
+    var chs = data.channels || [];
+    document.getElementById('s-total').textContent = fmt(data.totalAll);
+    document.getElementById('s-count').textContent = fmt(chs.length);
+    document.getElementById('s-today').textContent = fmt(data.todayAll);
+
+    if(chs.length === 0){
+      listEl.innerHTML = '<div class="empty">아직 생성된 채널이 없습니다. 생성기에서 채널을 만들어 보세요.</div>';
+    } else {
+      listEl.innerHTML = "";
+      chs.forEach(function(c){
+        var div = document.createElement('div');
+        div.className = "ch";
+        div.onclick = function(){ location.hash = "ch=" + encodeURIComponent(c.id); };
+        div.innerHTML =
+          '<div class="info"><div class="name">'+c.id+'</div>'+
+          '<div class="meta">'+(c.note ? c.note+" · " : "")+'생성 '+(c.createdLabel||"")+'</div></div>'+
+          '<div class="col"><div class="cl">Android</div><div class="cv">'+fmt(c.aos)+'</div></div>'+
+          '<div class="col"><div class="cl">iPhone</div><div class="cv">'+fmt(c.ios)+'</div></div>'+
+          '<div class="col total"><div class="cl">합계</div><div class="cv">'+fmt(c.total)+'</div></div>'+
+          '<span class="chev">›</span>';
+        listEl.appendChild(div);
+      });
+    }
+    var now = new Date();
+    document.getElementById('updated').textContent =
+      "업데이트 " + now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  async function loadDetail(id){
+    document.getElementById('d-name').textContent = id;
+    document.getElementById('d-note').textContent = "";
+    document.getElementById('d-rows').innerHTML = '<div class="empty">불러오는 중…</div>';
+    ['d-total','d-aos','d-ios','d-today'].forEach(function(k){ document.getElementById(k).textContent="…"; });
+
+    var data;
+    try{
+      var r = await fetch(BASE + "/api/channel?ch=" + encodeURIComponent(id), {cache:"no-store"});
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      data = await r.json();
+    }catch(e){
+      document.getElementById('d-rows').innerHTML = '<div class="empty">상세를 불러오지 못했습니다.</div>'; return;
+    }
+
+    document.getElementById('d-note').textContent = data.note || "";
+    document.getElementById('d-total').textContent = fmt(data.aosTotal + data.iosTotal);
+    document.getElementById('d-aos').textContent = fmt(data.aosTotal);
+    document.getElementById('d-ios').textContent = fmt(data.iosTotal);
+
+    var days = data.days || [];
+    var todayRow = days.length ? days[0] : {aos:0,ios:0};
+    document.getElementById('d-today').textContent = fmt((todayRow.aos||0)+(todayRow.ios||0));
+
+    var maxTot = 1;
+    days.forEach(function(d){ var t=(d.aos||0)+(d.ios||0); if(t>maxTot) maxTot=t; });
+
+    var rowsEl = document.getElementById('d-rows');
+    if(days.length === 0){ rowsEl.innerHTML = '<div class="empty">데이터가 없습니다.</div>'; }
+    else {
+      var html = "";
+      days.forEach(function(d){
+        var dt = new Date(d.date.slice(0,4), +d.date.slice(4,6)-1, d.date.slice(6,8));
+        var dow = dt.getDay(), weekend = (dow===0||dow===6);
+        var a = d.aos||0, i = d.ios||0, tot = a+i;
+        var label = d.date.slice(4,6)+"/"+d.date.slice(6,8);
+        html += '<div class="drow'+(weekend?' weekend':'')+(tot===0?' zero':'')+'">'+
+          '<div class="date">'+label+'<span class="dow">'+DOW[dow]+'</span></div>'+
+          '<div class="barwrap" title="Android '+a+' / iPhone '+i+'">'+
+            '<div class="seg a" style="width:'+(a/maxTot*100)+'%"></div>'+
+            '<div class="seg i" style="width:'+(i/maxTot*100)+'%"></div>'+
+          '</div>'+
+          '<div class="tot">'+fmt(tot)+'</div></div>';
+      });
+      rowsEl.innerHTML = html;
+    }
+
+    var urlA = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=aos";
+    var urlI = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=ios";
+    document.getElementById('d-qrlinks').innerHTML =
+      '<a href="'+urlA+'" target="_blank" rel="noopener">Android 링크 열기 ↗</a>'+
+      '<a href="'+urlI+'" target="_blank" rel="noopener">iPhone 링크 열기 ↗</a>';
+  }
+
+  function goList(){ location.hash = ""; }
+
+  function route(){
+    var m = location.hash.match(/ch=([^&]+)/);
+    if(m){
+      var id = decodeURIComponent(m[1]);
+      document.getElementById('listView').classList.add('hide');
+      document.getElementById('detail').classList.add('show');
+      loadDetail(id);
+    } else {
+      document.getElementById('detail').classList.remove('show');
+      document.getElementById('listView').classList.remove('hide');
+      loadList();
+    }
+  }
+
+  window.addEventListener('hashchange', route);
+  route();
+</script>
+</body>
+</html>

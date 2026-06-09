@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A.Biz 채널 QR 생성기</title>
+<style>
+  :root{--bg:#0f1110;--fg:#f4f6f3;--muted:#9aa39c;--accent:#2d7fff;--line:#262b27;--card:#16191b}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);min-height:100vh;padding:32px 20px;
+       font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+  .wrap{max-width:680px;margin:0 auto}
+  .head{display:flex;align-items:center;gap:12px}
+  .dot{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;
+       display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
+  h1{font-size:18px;font-weight:700;letter-spacing:-.4px}
+  .sub{color:var(--muted);font-size:13px;margin:6px 0 24px 50px}
+  .nav{margin:0 0 22px 50px}
+  .nav a{color:var(--accent);font-size:13px;text-decoration:none}
+  .form{border:1px solid var(--line);border-radius:16px;padding:20px;background:var(--card)}
+  label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+  .hint{color:#6b726c;font-size:12px}
+  input{width:100%;height:40px;border:1px solid var(--line);border-radius:10px;background:#0f1110;
+        color:var(--fg);padding:0 12px;font-size:14px;font-family:inherit;margin-bottom:14px}
+  input:focus{outline:none;border-color:var(--accent)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  input.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .btns{display:flex;gap:8px;margin-top:4px}
+  button{font:inherit;cursor:pointer;border-radius:10px;padding:11px 18px;border:1px solid var(--line);
+         background:transparent;color:var(--fg);font-size:14px;font-weight:600}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .msg{margin-top:14px;font-size:13px;min-height:18px}
+  .msg.err{color:#ff8b7d}
+  .msg.ok{color:#7fd17f}
+  .result{margin-top:22px;display:none}
+  .result.show{display:block}
+  .qrgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .qrbox{border:1px solid var(--line);border-radius:16px;padding:18px;text-align:center;background:var(--card)}
+  .qrbox h3{font-size:14px;font-weight:700;margin-bottom:12px}
+  .qrbox .canvas{width:160px;height:160px;margin:0 auto 12px;background:#fff;border-radius:8px;padding:8px}
+  .qrbox .canvas img,.qrbox .canvas canvas{width:100%;height:100%}
+  .qrbox .url{font-size:11px;color:var(--muted);word-break:break-all;margin-bottom:12px;font-family:ui-monospace,monospace}
+  .qrbox .acts{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  .qrbox .acts button{padding:7px 12px;font-size:12px;font-weight:600}
+  .note{margin:22px 0 0 0;color:var(--muted);font-size:12px;line-height:1.7;border-top:1px solid var(--line);padding-top:16px}
+  code{background:#1c201d;padding:1px 5px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="dot">A.</div>
+    <h1>A.Biz 채널 QR 생성기</h1>
+  </div>
+  <div class="sub">채널 꼬리표를 입력하면 Android·iPhone QR이 만들어지고 대시보드에 등록됩니다.</div>
+  <div class="nav"><a href="./dashboard.html">→ 실적 대시보드 보기</a></div>
+
+  <div class="form">
+    <label>채널 꼬리표 <span class="hint">(영문 소문자·숫자·_ , 2~40자 · 대문자는 자동 소문자 변환)</span></label>
+    <input id="f-id" placeholder="예: poster_lobby" autocomplete="off">
+
+    <label>설명 / 메모 <span class="hint">(선택)</span></label>
+    <input id="f-note" placeholder="예: 본사 로비 포스터" autocomplete="off">
+
+    <div class="row">
+      <div>
+        <label>Android 딥링크</label>
+        <input id="f-aos" class="mono" value="toktok://com.skt.pe.activity.mobileclient.detail?appId=A000S00050">
+      </div>
+      <div>
+        <label>iOS 딥링크</label>
+        <input id="f-ios" class="mono" value="I000ST0006://detail?appId=I000S00089">
+      </div>
+    </div>
+
+    <div class="btns">
+      <button class="primary" id="btn-create">채널 생성 + QR 발급</button>
+      <button id="btn-reset">초기화</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="qrgrid">
+      <div class="qrbox">
+        <h3>Android</h3>
+        <div class="canvas" id="qr-aos"></div>
+        <div class="url" id="url-aos"></div>
+        <div class="acts">
+          <button onclick="dl('aos','png')">PNG</button>
+          <button onclick="dl('aos','svg')">SVG</button>
+          <button onclick="copyUrl('aos')">주소 복사</button>
+        </div>
+      </div>
+      <div class="qrbox">
+        <h3>iPhone</h3>
+        <div class="canvas" id="qr-ios"></div>
+        <div class="url" id="url-ios"></div>
+        <div class="acts">
+          <button onclick="dl('ios','png')">PNG</button>
+          <button onclick="dl('ios','svg')">SVG</button>
+          <button onclick="copyUrl('ios')">주소 복사</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    · 생성된 채널은 누구나 주소를 알면 열람할 수 있습니다(접근 제한 없음).<br>
+    · QR 주소 형식: <code>/go?ch={채널}&os={aos|ios}</code><br>
+    · 같은 채널 꼬리표로 다시 생성하면 기존 채널 정보가 갱신됩니다.
+  </div>
+</div>
+
+<script src="./vendor/qrcode.js"></script>
+<script>
+  var BASE = location.origin;
+  var last = { aos:{url:""}, ios:{url:""}, id:"" };
+
+  function msg(text, kind){
+    var m = document.getElementById('msg');
+    m.textContent = text || "";
+    m.className = "msg" + (kind ? " " + kind : "");
+  }
+
+  // qrcode-generator: 가장 낮은 type에서 시작해 데이터가 들어갈 때까지 키움
+  function buildQR(text){
+    for(var type=4; type<=20; type++){
+      try{
+        var qr = qrcode(type, 'M');
+        qr.addData(text);
+        qr.make();
+        return qr;
+      }catch(e){ /* 용량 초과 시 다음 type */ }
+    }
+    return null;
+  }
+
+  function qrToSvg(text, sizePx){
+    var qr = buildQR(text);
+    if(!qr) return null;
+    var count = qr.getModuleCount();
+    var cell = 4, margin = 4;
+    var dim = count * cell + margin * 2;
+    var rects = "";
+    for(var r=0;r<count;r++){
+      for(var c=0;c<count;c++){
+        if(qr.isDark(r,c)){
+          rects += '<rect x="'+(margin+c*cell)+'" y="'+(margin+r*cell)+'" width="'+cell+'" height="'+cell+'"/>';
+        }
+      }
+    }
+    var w = sizePx || dim;
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+w+'" viewBox="0 0 '+dim+' '+dim+'">'+
+      '<rect width="'+dim+'" height="'+dim+'" fill="#ffffff"/>'+
+      '<g fill="#0f1110" shape-rendering="crispEdges">'+rects+'</g></svg>';
+  }
+
+  function makeQR(elId, text){
+    var box = document.getElementById(elId);
+    var svg = qrToSvg(text, 160);
+    box.innerHTML = svg ? svg : "QR 오류";
+  }
+
+  document.getElementById('btn-create').onclick = async function(){
+    var id = document.getElementById('f-id').value.trim().toLowerCase();
+    var note = document.getElementById('f-note').value.trim();
+    var aos = document.getElementById('f-aos').value.trim();
+    var ios = document.getElementById('f-ios').value.trim();
+
+    if(!/^[a-z0-9_]{2,40}$/.test(id)){
+      msg("채널 꼬리표는 영문 소문자·숫자·_ 조합 2~40자여야 합니다.", "err"); return;
+    }
+    if(!aos || !ios){ msg("딥링크를 모두 입력하세요.", "err"); return; }
+
+    msg("생성 중…");
+    try{
+      var r = await fetch(BASE + "/api/channels", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ label:id, note:note, aosLink:aos, iosLink:ios })
+      });
+      if(!r.ok){ var t = await r.text(); throw new Error(t || ("HTTP "+r.status)); }
+      await r.json();
+    }catch(e){
+      msg("생성 실패: " + e.message, "err"); return;
+    }
+
+    var urlA = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=aos";
+    var urlI = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=ios";
+    last = { aos:{url:urlA}, ios:{url:urlI}, id:id };
+
+    document.getElementById('url-aos').textContent = urlA;
+    document.getElementById('url-ios').textContent = urlI;
+    makeQR('qr-aos', urlA);
+    makeQR('qr-ios', urlI);
+    document.getElementById('result').classList.add('show');
+    msg("채널 '" + id + "' 생성 완료. 대시보드에 등록되었습니다.", "ok");
+  };
+
+  document.getElementById('btn-reset').onclick = function(){
+    document.getElementById('f-id').value = "";
+    document.getElementById('f-note').value = "";
+    document.getElementById('result').classList.remove('show');
+    msg("");
+  };
+
+  function dl(os, fmt){
+    var url = last[os].url; if(!url) return;
+    var fname = "abiz_qr_" + last.id + "_" + os + "." + fmt;
+    var svg = qrToSvg(url, 1000);
+    if(!svg) return;
+    if(fmt === "svg"){
+      var blob = new Blob([svg], {type:"image/svg+xml"});
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = fname; a.click();
+    } else {
+      var img = new Image();
+      var svgBlob = new Blob([svg], {type:"image/svg+xml"});
+      var u = URL.createObjectURL(svgBlob);
+      img.onload = function(){
+        var cv = document.createElement('canvas');
+        cv.width = 1000; cv.height = 1000;
+        var ctx = cv.getContext('2d');
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,1000,1000);
+        ctx.drawImage(img, 0, 0, 1000, 1000);
+        URL.revokeObjectURL(u);
+        var a = document.createElement('a'); a.href = cv.toDataURL("image/png"); a.download = fname; a.click();
+      };
+      img.src = u;
+    }
+  }
+
+  function copyUrl(os){
+    var url = last[os].url; if(!url) return;
+    navigator.clipboard.writeText(url).then(function(){ msg("주소를 복사했습니다.", "ok"); });
+  }
+</script>
+</body>
+</html>
