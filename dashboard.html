@@ -73,6 +73,7 @@
   .qrlinks .qracts{display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap}
   .qrlinks .qracts button{padding:7px 12px;font-size:12px;font-weight:600}
   .qrlinks .qracts a{color:var(--accent);text-decoration:none;font-size:12px;font-weight:600}
+  .legacy-note{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.7;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--card)}
 </style>
 </head>
 <body>
@@ -123,6 +124,67 @@
   var BASE = location.origin;
   var DOW = ["일","월","화","수","목","금","토"];
 
+  // ── 기존(레거시) 통합 QR을 특별 채널로 합치기 ──
+  // 데이터 출처가 Upstash가 아니라 기존 CountAPI인 채널. 읽기 전용.
+  var LEGACY = {
+    id: "legacy_unified",          // 목록/상세에서 식별용 (실제 채널 아님)
+    label: "기존 통합 QR",
+    note: "GitHub Pages + CountAPI (인쇄 배포본)",
+    keys: { aos: "skt_abiz_qr_be7712e8_aos", ios: "skt_abiz_qr_be7712e8_ios" },
+    countGet: "https://countapi.mileshilliard.com/api/v1/get/",
+    startDate: { y: 2026, m: 5, d: 8 } // 일자별 적재 시작일(KST). 기존 대시보드와 동일하게.
+  };
+
+  function kstNow(){ var n=new Date(); return new Date(n.getTime()+(n.getTimezoneOffset()*60000)+(9*3600000)); }
+  function ymdOf(d){ return ''+d.getFullYear()+("0"+(d.getMonth()+1)).slice(-2)+("0"+d.getDate()).slice(-2); }
+
+  async function legacyRead(key){
+    try{
+      var r = await fetch(LEGACY.countGet + key, {cache:"no-store"});
+      if(r.status === 404) return 0;
+      var d = await r.json();
+      return parseInt(d.value, 10) || 0;
+    }catch(e){ return 0; }
+  }
+
+  // 레거시 채널의 누적/오늘 (목록용)
+  async function legacySummary(){
+    var today = ymdOf(kstNow());
+    var res = await Promise.all([
+      legacyRead(LEGACY.keys.aos),
+      legacyRead(LEGACY.keys.ios),
+      legacyRead(LEGACY.keys.aos + "_" + today),
+      legacyRead(LEGACY.keys.ios + "_" + today),
+    ]);
+    var aos=res[0], ios=res[1], taos=res[2], tios=res[3];
+    return { id:LEGACY.id, note:LEGACY.note, createdLabel:"기존", createdAt:Number.MAX_SAFE_INTEGER,
+             aos:aos, ios:ios, total:aos+ios, _today:taos+tios };
+  }
+
+  // 레거시 채널 상세 (일자별)
+  async function legacyDetail(){
+    var today = kstNow(); today.setHours(0,0,0,0);
+    var start = new Date(LEGACY.startDate.y, LEGACY.startDate.m, LEGACY.startDate.d); start.setHours(0,0,0,0);
+    if(start.getTime() > today.getTime()) start = new Date(today.getTime());
+    var dates = [];
+    for(var t=today.getTime(); t>=start.getTime(); t-=86400000) dates.push(new Date(t));
+    if(dates.length > 400) dates = dates.slice(0,400);
+
+    var jobs = [];
+    dates.forEach(function(d){
+      var k = ymdOf(d);
+      jobs.push(legacyRead(LEGACY.keys.aos + "_" + k));
+      jobs.push(legacyRead(LEGACY.keys.ios + "_" + k));
+    });
+    var vals = await Promise.all(jobs);
+    var days = dates.map(function(d, idx){
+      return { date: ymdOf(d), aos: vals[idx*2]||0, ios: vals[idx*2+1]||0 };
+    });
+    var aosTotal = await legacyRead(LEGACY.keys.aos);
+    var iosTotal = await legacyRead(LEGACY.keys.ios);
+    return { id:LEGACY.id, note:LEGACY.note, aosTotal:aosTotal, iosTotal:iosTotal, days:days, legacy:true };
+  }
+
   function fmt(n){ return (n||0).toLocaleString(); }
 
   function buildQR(text){
@@ -171,21 +233,48 @@
       listEl.innerHTML = '<div class="empty">목록을 불러오지 못했습니다. (API 연결 확인)</div>'; return;
     }
     var chs = data.channels || [];
-    document.getElementById('s-total').textContent = fmt(data.totalAll);
-    document.getElementById('s-count').textContent = fmt(chs.length);
-    document.getElementById('s-today').textContent = fmt(data.todayAll);
 
-    if(chs.length === 0){
+    // 레거시(기존 통합 QR) 채널을 맨 위에 합침
+    var legacy = null;
+    try { legacy = await legacySummary(); } catch(e){ legacy = null; }
+
+    var totalAll = data.totalAll || 0;
+    var todayAll = data.todayAll || 0;
+    var count = chs.length;
+    if(legacy){
+      totalAll += legacy.total;
+      todayAll += legacy._today;
+      count += 1;
+    }
+
+    document.getElementById('s-total').textContent = fmt(totalAll);
+    document.getElementById('s-count').textContent = fmt(count);
+    document.getElementById('s-today').textContent = fmt(todayAll);
+
+    // 렌더할 채널 배열: 레거시 먼저, 그다음 일반 채널
+    var rows = [];
+    if(legacy){
+      rows.push({ id: legacy.id, display: LEGACY.label, note: legacy.note,
+                  createdLabel: legacy.createdLabel, aos: legacy.aos, ios: legacy.ios, total: legacy.total, isLegacy:true });
+    }
+    chs.forEach(function(c){
+      rows.push({ id: c.id, display: c.id, note: c.note, createdLabel: c.createdLabel,
+                  aos: c.aos, ios: c.ios, total: c.total, isLegacy:false });
+    });
+
+    if(rows.length === 0){
       listEl.innerHTML = '<div class="empty">아직 생성된 채널이 없습니다. 생성기에서 채널을 만들어 보세요.</div>';
     } else {
       listEl.innerHTML = "";
-      chs.forEach(function(c){
+      rows.forEach(function(c){
         var div = document.createElement('div');
         div.className = "ch";
         div.onclick = function(){ location.hash = "ch=" + encodeURIComponent(c.id); };
+        var badge = c.isLegacy ? ' <span class="pill">기존</span>' : '';
+        var metaLine = (c.note ? c.note : "") + (c.isLegacy ? "" : (" · 생성 " + (c.createdLabel||"")));
         div.innerHTML =
-          '<div class="info"><div class="name">'+c.id+'</div>'+
-          '<div class="meta">'+(c.note ? c.note+" · " : "")+'생성 '+(c.createdLabel||"")+'</div></div>'+
+          '<div class="info"><div class="name">'+c.display+badge+'</div>'+
+          '<div class="meta">'+metaLine+'</div></div>'+
           '<div class="col"><div class="cl">Android</div><div class="cv">'+fmt(c.aos)+'</div></div>'+
           '<div class="col"><div class="cl">iPhone</div><div class="cv">'+fmt(c.ios)+'</div></div>'+
           '<div class="col total"><div class="cl">합계</div><div class="cv">'+fmt(c.total)+'</div></div>'+
@@ -199,16 +288,21 @@
   }
 
   async function loadDetail(id){
-    document.getElementById('d-name').textContent = id;
+    var isLegacy = (id === LEGACY.id);
+    document.getElementById('d-name').textContent = isLegacy ? LEGACY.label : id;
     document.getElementById('d-note').textContent = "";
     document.getElementById('d-rows').innerHTML = '<div class="empty">불러오는 중…</div>';
     ['d-total','d-aos','d-ios','d-today'].forEach(function(k){ document.getElementById(k).textContent="…"; });
 
     var data;
     try{
-      var r = await fetch(BASE + "/api/channel?ch=" + encodeURIComponent(id), {cache:"no-store"});
-      if(!r.ok) throw new Error("HTTP " + r.status);
-      data = await r.json();
+      if(isLegacy){
+        data = await legacyDetail();
+      } else {
+        var r = await fetch(BASE + "/api/channel?ch=" + encodeURIComponent(id), {cache:"no-store"});
+        if(!r.ok) throw new Error("HTTP " + r.status);
+        data = await r.json();
+      }
     }catch(e){
       document.getElementById('d-rows').innerHTML = '<div class="empty">상세를 불러오지 못했습니다.</div>'; return;
     }
@@ -245,25 +339,31 @@
       rowsEl.innerHTML = html;
     }
 
-    var urlA = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=aos";
-    var urlI = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=ios";
-    var svgA = qrToSvg(urlA, 150) || "QR 오류";
-    var svgI = qrToSvg(urlI, 150) || "QR 오류";
-    document.getElementById('d-qrlinks').innerHTML =
-      '<div class="qrgrid">'+
-        '<div class="qrbox"><h3>Android</h3><div class="qrimg">'+svgA+'</div>'+
-          '<div class="qracts">'+
-            '<button onclick="_dlQR(\''+urlA+'\',\'abiz_qr_'+id+'_aos.png\',\'png\')">PNG</button>'+
-            '<button onclick="_dlQR(\''+urlA+'\',\'abiz_qr_'+id+'_aos.svg\',\'svg\')">SVG</button>'+
-            '<a href="'+urlA+'" target="_blank" rel="noopener">열기 ↗</a>'+
-          '</div></div>'+
-        '<div class="qrbox"><h3>iPhone</h3><div class="qrimg">'+svgI+'</div>'+
-          '<div class="qracts">'+
-            '<button onclick="_dlQR(\''+urlI+'\',\'abiz_qr_'+id+'_ios.png\',\'png\')">PNG</button>'+
-            '<button onclick="_dlQR(\''+urlI+'\',\'abiz_qr_'+id+'_ios.svg\',\'svg\')">SVG</button>'+
-            '<a href="'+urlI+'" target="_blank" rel="noopener">열기 ↗</a>'+
-          '</div></div>'+
-      '</div>';
+    if(isLegacy){
+      document.getElementById('d-qrlinks').innerHTML =
+        '<div class="legacy-note">이 채널은 기존에 인쇄·배포된 통합 QR의 누적 실적입니다. ' +
+        '기존 시스템(GitHub Pages + CountAPI)에서 읽어오며, 여기서 QR을 새로 발급하지 않습니다.</div>';
+    } else {
+      var urlA = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=aos";
+      var urlI = BASE + "/go?ch=" + encodeURIComponent(id) + "&os=ios";
+      var svgA = qrToSvg(urlA, 150) || "QR 오류";
+      var svgI = qrToSvg(urlI, 150) || "QR 오류";
+      document.getElementById('d-qrlinks').innerHTML =
+        '<div class="qrgrid">'+
+          '<div class="qrbox"><h3>Android</h3><div class="qrimg">'+svgA+'</div>'+
+            '<div class="qracts">'+
+              '<button onclick="_dlQR(\''+urlA+'\',\'abiz_qr_'+id+'_aos.png\',\'png\')">PNG</button>'+
+              '<button onclick="_dlQR(\''+urlA+'\',\'abiz_qr_'+id+'_aos.svg\',\'svg\')">SVG</button>'+
+              '<a href="'+urlA+'" target="_blank" rel="noopener">열기 ↗</a>'+
+            '</div></div>'+
+          '<div class="qrbox"><h3>iPhone</h3><div class="qrimg">'+svgI+'</div>'+
+            '<div class="qracts">'+
+              '<button onclick="_dlQR(\''+urlI+'\',\'abiz_qr_'+id+'_ios.png\',\'png\')">PNG</button>'+
+              '<button onclick="_dlQR(\''+urlI+'\',\'abiz_qr_'+id+'_ios.svg\',\'svg\')">SVG</button>'+
+              '<a href="'+urlI+'" target="_blank" rel="noopener">열기 ↗</a>'+
+            '</div></div>'+
+        '</div>';
+    }
   }
 
   function goList(){ location.hash = ""; }
