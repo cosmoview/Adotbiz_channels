@@ -95,6 +95,8 @@
     <div class="list" id="list"><div class="empty">불러오는 중…</div></div>
     <div class="bar">
       <button class="primary" onclick="loadList()">새로고침</button>
+      <button onclick="exportAllSummaryCsv()">전체 CSV (요약)</button>
+      <button onclick="exportAllDailyCsv()">전체 CSV (일자별)</button>
       <span class="meta-r" id="updated"></span>
     </div>
   </div>
@@ -115,6 +117,10 @@
     </div>
     <div class="legend"><span><i class="a"></i>Android</span><span><i class="i"></i>iPhone</span></div>
     <div class="rows" id="d-rows"><div class="empty">불러오는 중…</div></div>
+    <div class="bar">
+      <button onclick="exportChannelSummaryCsv()">채널 CSV (요약)</button>
+      <button onclick="exportChannelDailyCsv()">채널 CSV (일자별)</button>
+    </div>
     <div class="qrlinks" id="d-qrlinks"></div>
   </div>
 </div>
@@ -222,6 +228,27 @@
   }
   window._dlQR = dlQR;
 
+  // ── CSV 다운로드 공용 ──
+  function csvCell(v){
+    var s = (v === null || v === undefined) ? "" : String(v);
+    if(/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+  function downloadCsv(filename, rows){
+    var body = rows.map(function(r){ return r.map(csvCell).join(","); }).join("\r\n");
+    var blob = new Blob(["\uFEFF" + body], {type:"text/csv;charset=utf-8"}); // BOM: 엑셀 한글 깨짐 방지
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  }
+  function todayStamp(){
+    var d = kstNow();
+    return ymdOf(d);
+  }
+  window._downloadCsv = downloadCsv;
+
   async function loadList(){
     var listEl = document.getElementById('list');
     listEl.innerHTML = '<div class="empty">불러오는 중…</div>';
@@ -285,7 +312,50 @@
     var now = new Date();
     document.getElementById('updated').textContent =
       "업데이트 " + now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+
+    window._listRows = rows;   // CSV 내보내기용
   }
+
+  // ── 목록: 전체 요약 CSV ──
+  function exportAllSummaryCsv(){
+    var rows = window._listRows || [];
+    if(rows.length === 0){ alert("내보낼 채널이 없습니다."); return; }
+    var out = [["채널", "메모", "구분", "Android", "iPhone", "합계"]];
+    rows.forEach(function(c){
+      out.push([
+        c.isLegacy ? LEGACY.label : c.id,
+        c.note || "",
+        c.isLegacy ? "기존" : "신규",
+        c.aos, c.ios, c.total
+      ]);
+    });
+    downloadCsv("abiz_channels_summary_" + todayStamp() + ".csv", out);
+  }
+
+  // ── 목록: 전체 일자별 CSV (모든 채널의 날짜×OS) ──
+  async function exportAllDailyCsv(){
+    var rows = window._listRows || [];
+    if(rows.length === 0){ alert("내보낼 채널이 없습니다."); return; }
+    var out = [["채널", "날짜", "Android", "iPhone", "합계"]];
+
+    for(var k=0;k<rows.length;k++){
+      var c = rows[k];
+      var detail;
+      try{
+        detail = c.isLegacy
+          ? await legacyDetail()
+          : await (await fetch(BASE + "/api/channel?ch=" + encodeURIComponent(c.id), {cache:"no-store"})).json();
+      }catch(e){ detail = { days: [] }; }
+      var name = c.isLegacy ? LEGACY.label : c.id;
+      (detail.days || []).forEach(function(d){
+        var ds = d.date.slice(0,4)+"-"+d.date.slice(4,6)+"-"+d.date.slice(6,8);
+        out.push([ name, ds, d.aos||0, d.ios||0, (d.aos||0)+(d.ios||0) ]);
+      });
+    }
+    downloadCsv("abiz_channels_daily_" + todayStamp() + ".csv", out);
+  }
+  window.exportAllSummaryCsv = exportAllSummaryCsv;
+  window.exportAllDailyCsv = exportAllDailyCsv;
 
   async function loadDetail(id){
     var isLegacy = (id === LEGACY.id);
@@ -306,6 +376,8 @@
     }catch(e){
       document.getElementById('d-rows').innerHTML = '<div class="empty">상세를 불러오지 못했습니다.</div>'; return;
     }
+
+    window._detailData = { id: id, isLegacy: isLegacy, name: (isLegacy ? LEGACY.label : id), data: data };
 
     document.getElementById('d-note').textContent = data.note || "";
     document.getElementById('d-total').textContent = fmt(data.aosTotal + data.iosTotal);
@@ -366,8 +438,37 @@
     }
   }
 
-  function goList(){ location.hash = ""; }
+  // ── 상세: 채널 요약 CSV ──
+  function exportChannelSummaryCsv(){
+    var d = window._detailData;
+    if(!d){ alert("채널 데이터가 없습니다."); return; }
+    var out = [
+      ["채널", d.name],
+      ["메모", d.data.note || ""],
+      ["구분", d.isLegacy ? "기존" : "신규"],
+      [],
+      ["Android", d.data.aosTotal || 0],
+      ["iPhone", d.data.iosTotal || 0],
+      ["합계", (d.data.aosTotal||0) + (d.data.iosTotal||0)]
+    ];
+    downloadCsv("abiz_" + (d.isLegacy ? "legacy" : d.id) + "_summary_" + todayStamp() + ".csv", out);
+  }
 
+  // ── 상세: 채널 일자별 CSV ──
+  function exportChannelDailyCsv(){
+    var d = window._detailData;
+    if(!d){ alert("채널 데이터가 없습니다."); return; }
+    var out = [["날짜", "Android", "iPhone", "합계"]];
+    (d.data.days || []).forEach(function(r){
+      var ds = r.date.slice(0,4)+"-"+r.date.slice(4,6)+"-"+r.date.slice(6,8);
+      out.push([ ds, r.aos||0, r.ios||0, (r.aos||0)+(r.ios||0) ]);
+    });
+    downloadCsv("abiz_" + (d.isLegacy ? "legacy" : d.id) + "_daily_" + todayStamp() + ".csv", out);
+  }
+  window.exportChannelSummaryCsv = exportChannelSummaryCsv;
+  window.exportChannelDailyCsv = exportChannelDailyCsv;
+
+  function goList(){ location.hash = ""; }
   function route(){
     var m = location.hash.match(/ch=([^&]+)/);
     if(m){
